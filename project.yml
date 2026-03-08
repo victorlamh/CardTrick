@@ -1,0 +1,27 @@
+name: CardTrick
+options:
+  bundleIdPrefix: com.yourname
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  CardTrick:
+    type: application
+    platform: iOS
+    sources:
+      - CardTrick
+    info:
+      path: CardTrick/Info.plist
+      properties:
+        CFBundleDisplayName: Camera
+        CFBundleName: Camera
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "Used to display the camera feed."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.cardtrick
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO

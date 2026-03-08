@@ -1,0 +1,40 @@
+name: Build CardTrick IPA
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned IPA
+        run: |
+          xcodebuild \
+            -scheme CardTrick \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -archivePath $PWD/build/CardTrick.xcarchive \
+            clean archive
+
+          mkdir -p Payload
+          cp -r build/CardTrick.xcarchive/Products/Applications/CardTrick.app Payload/
+          zip -r CardTrick.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardTrick
+          path: CardTrick.ipa
