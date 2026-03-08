@@ -7,7 +7,6 @@ struct ConfigView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Current status
                 Section {
                     HStack {
                         Text("Current Phase")
@@ -20,17 +19,15 @@ struct ConfigView: View {
                     Text("Status")
                 }
 
-                // Arm / disarm
                 Section {
                     Toggle("Arm Trick", isOn: $trickConfig.isArmed)
                         .tint(.red)
                 } header: {
                     Text("Control")
                 } footer: {
-                    Text("When armed, each time a card enters the frame the trick advances: first pass shows fake card, second pass shows real card, then disarms automatically.")
+                    Text("When armed, each card pass advances the trick: first pass shows fake card, second pass shows real card, then disarms automatically.")
                 }
 
-                // Manual phase override (useful for rehearsal)
                 Section {
                     Button("Reset to Idle") {
                         trickConfig.reset()
@@ -67,7 +64,7 @@ struct ConfigView: View {
 
     private var phaseLabel: String {
         switch trickConfig.phase {
-        case .idle:     return "Idle"
+        case .idle: return "Idle"
         case .fakeCard: return "Fake Card"
         case .realCard: return "Real Card"
         }
@@ -75,7 +72,7 @@ struct ConfigView: View {
 
     private var phaseColor: Color {
         switch trickConfig.phase {
-        case .idle:     return .secondary
+        case .idle: return .secondary
         case .fakeCard: return .red
         case .realCard: return .green
         }

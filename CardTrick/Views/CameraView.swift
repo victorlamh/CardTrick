@@ -6,10 +6,19 @@ import Vision
 class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     @Published var detectedCardCorners: [CGPoint]? = nil
 
+    var onCardEntered: (() -> Void)?
+
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     private let detectionQueue = DispatchQueue(label: "card.detection.queue")
+
+    private var presentFrames = 0
+    private var absentFrames = 0
+    private let requiredPresentFrames = 4
+    private let requiredAbsentFrames = 15
+    private var cardIsConfirmed = false
+    private var waitingForExit = false
 
     override init() {
         super.init()
@@ -56,20 +65,44 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
 
     private func detectCard(in pixelBuffer: CVPixelBuffer) {
         let request = VNDetectRectanglesRequest { [weak self] req, _ in
-            guard let results = req.results as? [VNRectangleObservation],
-                  let best = results.first else {
-                DispatchQueue.main.async { self?.detectedCardCorners = nil }
-                return
+            guard let self = self else { return }
+
+            let found = (req.results as? [VNRectangleObservation])?.first
+
+            if let best = found {
+                self.presentFrames += 1
+                self.absentFrames = 0
+                let corners = [best.topLeft, best.topRight, best.bottomRight, best.bottomLeft]
+
+                DispatchQueue.main.async {
+                    self.detectedCardCorners = corners
+                    if self.presentFrames >= self.requiredPresentFrames
+                        && !self.cardIsConfirmed
+                        && !self.waitingForExit {
+                        self.cardIsConfirmed = true
+                        self.waitingForExit = true
+                        self.onCardEntered?()
+                    }
+                }
+            } else {
+                self.absentFrames += 1
+                self.presentFrames = 0
+                if self.absentFrames >= self.requiredAbsentFrames {
+                    DispatchQueue.main.async {
+                        self.detectedCardCorners = nil
+                        self.cardIsConfirmed = false
+                        self.waitingForExit = false
+                    }
+                }
             }
-            let corners = [best.topLeft, best.topRight, best.bottomRight, best.bottomLeft]
-            DispatchQueue.main.async { self?.detectedCardCorners = corners }
         }
 
-        request.minimumAspectRatio = 0.5
-        request.maximumAspectRatio = 0.85
-        request.minimumConfidence = 0.85
-        request.minimumSize = 0.2
+        request.minimumAspectRatio = 0.3
+        request.maximumAspectRatio = 0.98
+        request.minimumConfidence = 0.55
+        request.minimumSize = 0.08
         request.maximumObservations = 1
+        request.quadratureTolerance = 30
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
         try? handler.perform([request])
@@ -104,11 +137,9 @@ struct CameraView: View {
 
     var body: some View {
         ZStack {
-            // Live camera feed
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
 
-            // Card overlay
             if let corners = camera.detectedCardCorners {
                 CardOverlayView(
                     corners: corners,
@@ -116,10 +147,8 @@ struct CameraView: View {
                     debugMode: debugMode
                 )
                 .ignoresSafeArea()
-                .onAppear { trickConfig.advance() }
             }
 
-            // Debug HUD — top left
             if debugMode {
                 VStack(alignment: .leading, spacing: 6) {
                     debugBadge("Phase: \(phaseLabel)", color: phaseColor)
@@ -131,10 +160,8 @@ struct CameraView: View {
                 .padding(.leading, 16)
             }
 
-            // Controls
             VStack {
                 HStack {
-                    // Debug badge (visible when on)
                     if debugMode {
                         Button(action: { debugMode = false }) {
                             Text("DEBUG ON")
@@ -147,13 +174,11 @@ struct CameraView: View {
                         .padding(.leading, 16)
                     }
                     Spacer()
-                    // Secret config tap zone — top right, invisible
                     Button(action: { showConfig = true }) {
                         Color.clear.frame(width: 60, height: 60)
                     }
                 }
                 Spacer()
-                // Long press bottom bar 1 second → toggle debug
                 HStack {
                     Spacer()
                     Color.clear
@@ -164,6 +189,11 @@ struct CameraView: View {
                         }
                     Spacer()
                 }
+            }
+        }
+        .onAppear {
+            camera.onCardEntered = {
+                trickConfig.advance()
             }
         }
         .sheet(isPresented: $showConfig) {

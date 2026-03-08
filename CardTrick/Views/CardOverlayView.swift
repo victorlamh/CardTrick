@@ -8,51 +8,27 @@ struct CardOverlayView: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let screenCorners = convertCorners(corners, to: size)
+            let screenCorners = toScreen(corners, size: size)
 
             ZStack {
-                // Fake card overlay — only in fakeCard phase
                 if phase == .fakeCard {
-                    Canvas { context, _ in
-                        guard let image = UIImage(named: "fake_card"),
-                              let cgImage = image.cgImage else { return }
-
-                        var path = Path()
-                        path.move(to: screenCorners[0])
-                        path.addLine(to: screenCorners[1])
-                        path.addLine(to: screenCorners[2])
-                        path.addLine(to: screenCorners[3])
-                        path.closeSubpath()
-
-                        context.clip(to: path)
-
-                        let xs = screenCorners.map { $0.x }
-                        let ys = screenCorners.map { $0.y }
-                        let drawRect = CGRect(
-                            x: xs.min()!, y: ys.min()!,
-                            width: xs.max()! - xs.min()!,
-                            height: ys.max()! - ys.min()!
-                        )
-                        context.draw(Image(decorative: cgImage, scale: 1.0), in: drawRect)
-                    }
+                    WarpedCardView(screenCorners: screenCorners, size: size)
                 }
 
-                // Debug overlay — shows corners + quad outline
                 if debugMode {
-                    Canvas { context, _ in
-                        // Draw quad outline
-                        var path = Path()
-                        path.move(to: screenCorners[0])
-                        path.addLine(to: screenCorners[1])
-                        path.addLine(to: screenCorners[2])
-                        path.addLine(to: screenCorners[3])
-                        path.closeSubpath()
-                        context.stroke(path, with: .color(.green), lineWidth: 2)
-
-                        // Draw corner dots
-                        for corner in screenCorners {
-                            let dot = Path(ellipseIn: CGRect(x: corner.x - 6, y: corner.y - 6, width: 12, height: 12))
-                            context.fill(dot, with: .color(.red))
+                    Canvas { ctx, _ in
+                        var p = Path()
+                        p.move(to: screenCorners[0])
+                        p.addLine(to: screenCorners[1])
+                        p.addLine(to: screenCorners[2])
+                        p.addLine(to: screenCorners[3])
+                        p.closeSubpath()
+                        ctx.stroke(p, with: .color(.green), lineWidth: 2)
+                        for c in screenCorners {
+                            ctx.fill(
+                                Path(ellipseIn: CGRect(x: c.x-6, y: c.y-6, width: 12, height: 12)),
+                                with: .color(.red)
+                            )
                         }
                     }
                 }
@@ -60,9 +36,46 @@ struct CardOverlayView: View {
         }
     }
 
-    private func convertCorners(_ corners: [CGPoint], to size: CGSize) -> [CGPoint] {
-        return corners.map { point in
-            CGPoint(x: point.x * size.width, y: (1 - point.y) * size.height)
+    private func toScreen(_ pts: [CGPoint], size: CGSize) -> [CGPoint] {
+        pts.map { CGPoint(x: $0.x * size.width, y: (1 - $0.y) * size.height) }
+    }
+}
+
+// MARK: - Perspective warp via CIPerspectiveTransform
+struct WarpedCardView: UIViewRepresentable {
+    let screenCorners: [CGPoint]  // [topLeft, topRight, bottomRight, bottomLeft]
+    let size: CGSize
+
+    func makeUIView(context: Context) -> UIImageView {
+        let v = UIImageView()
+        v.backgroundColor = .clear
+        return v
+    }
+
+    func updateUIView(_ uiView: UIImageView, context: Context) {
+        guard
+            let src = UIImage(named: "fake_card"),
+            let ci = CIImage(image: src),
+            let filter = CIFilter(name: "CIPerspectiveTransform")
+        else { return }
+
+        func flip(_ p: CGPoint) -> CIVector {
+            CIVector(x: p.x, y: size.height - p.y)
         }
+
+        filter.setValue(ci,                          forKey: kCIInputImageKey)
+        filter.setValue(flip(screenCorners[0]),      forKey: "inputTopLeft")
+        filter.setValue(flip(screenCorners[1]),      forKey: "inputTopRight")
+        filter.setValue(flip(screenCorners[2]),      forKey: "inputBottomRight")
+        filter.setValue(flip(screenCorners[3]),      forKey: "inputBottomLeft")
+
+        guard let out = filter.outputImage else { return }
+
+        let ciCtx = CIContext(options: [.useSoftwareRenderer: false])
+        let rect = CGRect(origin: .zero, size: size)
+        guard let cg = ciCtx.createCGImage(out, from: rect) else { return }
+
+        uiView.frame = rect
+        uiView.image = UIImage(cgImage: cg)
     }
 }

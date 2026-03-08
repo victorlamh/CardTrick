@@ -9,7 +9,7 @@ struct CardTrickApp: App {
             CameraView()
                 .environmentObject(trickConfig)
                 .preferredColorScheme(.dark)
-                .statusBarHidden(true)  // hides the clock/battery bar for cleaner camera look
+                .statusBarHidden(true)
         }
     }
 }
