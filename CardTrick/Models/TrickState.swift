@@ -87,7 +87,7 @@ class CalculatorState: ObservableObject {
 
         if isArmed {
             scheduleVibration(after: vibrationDelay)
-            isArmed = false  // disarm after firing
+            isArmed = false
         }
     }
 
@@ -119,14 +119,11 @@ class CalculatorState: ObservableObject {
         return String(val)
     }
 
-    // MARK: - Notifications
+    // MARK: - Notification Permission
     func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            DispatchQueue.main.async {
-                self.notificationPermissionGranted = granted
-            }
+            DispatchQueue.main.async { self.notificationPermissionGranted = granted }
         }
-        // Check existing status too
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
                 self.notificationPermissionGranted = settings.authorizationStatus == .authorized
@@ -134,32 +131,62 @@ class CalculatorState: ObservableObject {
         }
     }
 
+    // MARK: - Vibration Scheduling
     private func scheduleVibration(after delay: Double) {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 
+        guard let number = Int(displayValue), number >= 1, number <= 52 else {
+            scheduleSingle(at: delay, id: 0)
+            DispatchQueue.main.async { self.lastScheduleError = "Out of range — single vibration" }
+            return
+        }
+
+        let tens = number / 10
+        let units = number % 10
+
+        var schedule: [Double] = []
+        let beatSpacing: Double = 0.5
+        let pauseSpacing: Double = 1.8
+
+        var cursor: Double = 0.0
+
+        if tens > 0 {
+            for _ in 0..<tens {
+                schedule.append(cursor)
+                cursor += beatSpacing
+            }
+            cursor += pauseSpacing
+        }
+
+        for _ in 0..<units {
+            schedule.append(cursor)
+            cursor += beatSpacing
+        }
+
+        for (i, offset) in schedule.enumerated() {
+            scheduleSingle(at: delay + offset, id: i)
+        }
+
+        DispatchQueue.main.async {
+            self.lastScheduleError = "Scheduled \(tens > 0 ? "\(tens)·\(units)" : "\(units)") OK ✓"
+        }
+    }
+
+    private func scheduleSingle(at time: Double, id: Int) {
         let content = UNMutableNotificationContent()
-        content.title = "Reminder"       // non-empty — iOS won't suppress it
-        content.body = " "               // single space — required on some versions
+        content.title = "Reminder"
+        content.body = " "
         content.sound = UNNotificationSound.default
 
         let trigger = UNTimeIntervalNotificationTrigger(
-            timeInterval: max(1, delay),
+            timeInterval: max(1, time),
             repeats: false
         )
         let request = UNNotificationRequest(
-            identifier: "vibration",
+            identifier: "vibration_\(id)",
             content: content,
             trigger: trigger
         )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self.lastScheduleError = error.localizedDescription
-                } else {
-                    self.lastScheduleError = "Scheduled OK ✓"
-                }
-            }
-        }
+        UNUserNotificationCenter.current().add(request)
     }
 }
