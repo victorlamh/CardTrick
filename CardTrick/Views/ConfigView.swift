@@ -1,80 +1,78 @@
 import SwiftUI
 
 struct ConfigView: View {
-    @EnvironmentObject var trickConfig: TrickConfig
+    @EnvironmentObject var calc: CalculatorState
     @Environment(\.dismiss) var dismiss
+    @State private var delayInput: String = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                // Status
                 Section {
                     HStack {
-                        Text("Current Phase")
+                        Text("Status")
                         Spacer()
-                        Text(phaseLabel)
-                            .foregroundColor(phaseColor)
+                        Text(calc.isArmed ? "ARMED" : "Disarmed")
+                            .foregroundColor(calc.isArmed ? .red : .secondary)
                             .fontWeight(.semibold)
                     }
                 } header: {
-                    Text("Status")
+                    Text("Trick")
                 }
 
+                // Arm toggle
                 Section {
-                    Toggle("Arm Trick", isOn: $trickConfig.isArmed)
+                    Toggle("Arm Vibration", isOn: $calc.isArmed)
                         .tint(.red)
-                } header: {
-                    Text("Control")
                 } footer: {
-                    Text("When armed, each card pass advances the trick: first pass shows fake card, second pass shows real card, then disarms automatically.")
+                    Text("When armed, pressing = schedules a vibration after the delay below. Disarms automatically after firing.")
                 }
 
+                // Delay config
                 Section {
-                    Button("Reset to Idle") {
-                        trickConfig.reset()
+                    HStack {
+                        Text("Delay")
+                        Spacer()
+                        TextField("seconds", text: $delayInput)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                        Text("sec")
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Vibration Timing")
+                } footer: {
+                    Text("How many seconds after = is pressed before the phone vibrates. Default is 10.")
+                }
+
+                // Reset
+                Section {
+                    Button("Disarm & Reset") {
+                        calc.isArmed = false
                     }
                     .foregroundColor(.orange)
-
-                    Button("Force → Fake Card Phase") {
-                        trickConfig.phase = .fakeCard
-                        trickConfig.isArmed = true
-                    }
-                    .foregroundColor(.blue)
-
-                    Button("Force → Real Card Phase") {
-                        trickConfig.phase = .realCard
-                        trickConfig.isArmed = true
-                    }
-                    .foregroundColor(.blue)
-                } header: {
-                    Text("Manual Override")
                 } footer: {
-                    Text("Use these during rehearsal to test each phase independently.")
+                    Text("Cancels any pending vibration.")
                 }
             }
-            .navigationTitle("Trick Config")
+            .navigationTitle("Config")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
+                    Button("Done") {
+                        if let d = Double(delayInput), d > 0 {
+                            calc.vibrationDelay = d
+                        }
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
                 }
             }
-        }
-    }
-
-    private var phaseLabel: String {
-        switch trickConfig.phase {
-        case .idle: return "Idle"
-        case .fakeCard: return "Fake Card"
-        case .realCard: return "Real Card"
-        }
-    }
-
-    private var phaseColor: Color {
-        switch trickConfig.phase {
-        case .idle: return .secondary
-        case .fakeCard: return .red
-        case .realCard: return .green
+            .onAppear {
+                delayInput = String(calc.vibrationDelay)
+            }
         }
     }
 }

@@ -2,14 +2,16 @@ import SwiftUI
 
 @main
 struct CardTrickApp: App {
-    @StateObject private var trickConfig = TrickConfig()
+    @StateObject private var calc = CalculatorState()
 
     var body: some Scene {
         WindowGroup {
-            CameraView()
-                .environmentObject(trickConfig)
+            CalculatorView()
+                .environmentObject(calc)
                 .preferredColorScheme(.dark)
-                .statusBarHidden(true)
+                .onAppear {
+                    calc.requestNotificationPermission()
+                }
         }
     }
 }
