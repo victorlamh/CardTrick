@@ -21,7 +21,6 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
             self.session.beginConfiguration()
             self.session.sessionPreset = .hd1920x1080
 
-            // Front camera
             guard let device = AVCaptureDevice.default(
                 .builtInWideAngleCamera,
                 for: .video,
@@ -32,14 +31,12 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
 
             self.session.addInput(input)
 
-            // Frame output
             self.videoOutput.setSampleBufferDelegate(self, queue: self.detectionQueue)
             self.videoOutput.alwaysDiscardsLateVideoFrames = true
             if self.session.canAddOutput(self.videoOutput) {
                 self.session.addOutput(self.videoOutput)
             }
 
-            // Lock orientation to portrait
             if let connection = self.videoOutput.connection(with: .video) {
                 connection.videoRotationAngle = 90
                 connection.isVideoMirrored = true
@@ -50,7 +47,6 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
         }
     }
 
-    // Called on every frame
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
@@ -65,19 +61,10 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
                 DispatchQueue.main.async { self?.detectedCardCorners = nil }
                 return
             }
-
-            // VNRectangleObservation gives normalized coords (0-1), bottom-left origin
-            // We get 4 corners
-            let corners = [
-                best.topLeft,
-                best.topRight,
-                best.bottomRight,
-                best.bottomLeft
-            ]
+            let corners = [best.topLeft, best.topRight, best.bottomRight, best.bottomLeft]
             DispatchQueue.main.async { self?.detectedCardCorners = corners }
         }
 
-        // Tune for playing card aspect ratio (63x88mm → ~0.716)
         request.minimumAspectRatio = 0.5
         request.maximumAspectRatio = 0.85
         request.minimumConfidence = 0.85
@@ -89,7 +76,7 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
     }
 }
 
-// MARK: - SwiftUI Camera Preview
+// MARK: - Camera Preview
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
 
@@ -113,36 +100,99 @@ struct CameraView: View {
     @EnvironmentObject var trickConfig: TrickConfig
     @StateObject private var camera = CameraManager()
     @State private var showConfig = false
+    @State private var debugMode: Bool = false
 
     var body: some View {
         ZStack {
-            // Live camera feed (fills screen)
+            // Live camera feed
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
 
-            // Overlay layer — card replacement drawn here
+            // Card overlay
             if let corners = camera.detectedCardCorners {
                 CardOverlayView(
                     corners: corners,
-                    phase: trickConfig.phase
+                    phase: trickConfig.phase,
+                    debugMode: debugMode
                 )
                 .ignoresSafeArea()
                 .onAppear { trickConfig.advance() }
             }
 
-            // Secret config button — top right corner, invisible
+            // Debug HUD — top left
+            if debugMode {
+                VStack(alignment: .leading, spacing: 6) {
+                    debugBadge("Phase: \(phaseLabel)", color: phaseColor)
+                    debugBadge("Armed: \(trickConfig.isArmed ? "YES" : "NO")", color: trickConfig.isArmed ? .green : .gray)
+                    debugBadge("Card: \(camera.detectedCardCorners != nil ? "DETECTED ✓" : "not found")", color: camera.detectedCardCorners != nil ? .green : .red)
+                    Spacer()
+                }
+                .padding(.top, 60)
+                .padding(.leading, 16)
+            }
+
+            // Controls
             VStack {
                 HStack {
+                    // Debug badge (visible when on)
+                    if debugMode {
+                        Button(action: { debugMode = false }) {
+                            Text("DEBUG ON")
+                                .font(.system(size: 11, weight: .bold))
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color.red)
+                                .foregroundColor(.white)
+                                .cornerRadius(6)
+                        }
+                        .padding(.leading, 16)
+                    }
                     Spacer()
+                    // Secret config tap zone — top right, invisible
                     Button(action: { showConfig = true }) {
                         Color.clear.frame(width: 60, height: 60)
                     }
                 }
                 Spacer()
+                // Long press bottom bar 1 second → toggle debug
+                HStack {
+                    Spacer()
+                    Color.clear
+                        .frame(height: 80)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 1.0) {
+                            debugMode.toggle()
+                        }
+                    Spacer()
+                }
             }
         }
         .sheet(isPresented: $showConfig) {
             ConfigView().environmentObject(trickConfig)
         }
+    }
+
+    private var phaseLabel: String {
+        switch trickConfig.phase {
+        case .idle: return "Idle"
+        case .fakeCard: return "Fake Card"
+        case .realCard: return "Real Card"
+        }
+    }
+
+    private var phaseColor: Color {
+        switch trickConfig.phase {
+        case .idle: return .gray
+        case .fakeCard: return .red
+        case .realCard: return .green
+        }
+    }
+
+    private func debugBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(color.opacity(0.85))
+            .foregroundColor(.white)
+            .cornerRadius(6)
     }
 }
