@@ -7,6 +7,8 @@ class CalculatorState: ObservableObject {
     @Published var activeOperator: String? = nil
     @Published var isArmed: Bool = false
     @Published var vibrationDelay: Double = 10.0
+    @Published var notificationPermissionGranted: Bool = false
+    @Published var lastScheduleError: String = ""
 
     private var firstOperand: Double? = nil
     private var pendingOperator: String? = nil
@@ -25,7 +27,7 @@ class CalculatorState: ObservableObject {
             handleEquals()
         case "AC":
             handleClear()
-        case "±":
+        case "+/-":
             handleSign()
         case "%":
             handlePercent()
@@ -85,6 +87,7 @@ class CalculatorState: ObservableObject {
 
         if isArmed {
             scheduleVibration(after: vibrationDelay)
+            isArmed = false  // disarm after firing
         }
     }
 
@@ -113,26 +116,50 @@ class CalculatorState: ObservableObject {
         if val.truncatingRemainder(dividingBy: 1) == 0 && abs(val) < 1e12 {
             return String(Int(val))
         }
-        let s = String(val)
-        return s
+        return String(val)
     }
 
-    // MARK: - Notification
+    // MARK: - Notifications
     func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            DispatchQueue.main.async {
+                self.notificationPermissionGranted = granted
+            }
+        }
+        // Check existing status too
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                self.notificationPermissionGranted = settings.authorizationStatus == .authorized
+            }
+        }
     }
 
     private func scheduleVibration(after delay: Double) {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 
         let content = UNMutableNotificationContent()
-        content.title = ""
-        content.body = ""
+        content.title = "Reminder"       // non-empty — iOS won't suppress it
+        content.body = " "               // single space — required on some versions
         content.sound = UNNotificationSound.default
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, delay), repeats: false)
-        let request = UNNotificationRequest(identifier: "vibration", content: content, trigger: trigger)
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, delay),
+            repeats: false
+        )
+        let request = UNNotificationRequest(
+            identifier: "vibration",
+            content: content,
+            trigger: trigger
+        )
 
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(request) { error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.lastScheduleError = error.localizedDescription
+                } else {
+                    self.lastScheduleError = "Scheduled OK ✓"
+                }
+            }
+        }
     }
 }

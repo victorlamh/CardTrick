@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct ConfigView: View {
     @EnvironmentObject var calc: CalculatorState
@@ -8,33 +9,61 @@ struct ConfigView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Status
+                // Permission status — critical diagnostic
+                Section {
+                    HStack {
+                        Text("Notification Permission")
+                        Spacer()
+                        if calc.notificationPermissionGranted {
+                            Text("Granted ✓")
+                                .foregroundColor(.green)
+                                .fontWeight(.semibold)
+                        } else {
+                            Button("Open Settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                            .foregroundColor(.red)
+                        }
+                    }
+
+                    if !calc.lastScheduleError.isEmpty {
+                        HStack {
+                            Text("Last schedule")
+                            Spacer()
+                            Text(calc.lastScheduleError)
+                                .foregroundColor(calc.lastScheduleError.contains("OK") ? .green : .red)
+                                .font(.system(size: 13))
+                        }
+                    }
+                } header: {
+                    Text("Diagnostics")
+                }
+
+                // Arm
                 Section {
                     HStack {
                         Text("Status")
                         Spacer()
-                        Text(calc.isArmed ? "ARMED" : "Disarmed")
+                        Text(calc.isArmed ? "ARMED 🔴" : "Disarmed")
                             .foregroundColor(calc.isArmed ? .red : .secondary)
                             .fontWeight(.semibold)
                     }
-                } header: {
-                    Text("Trick")
-                }
-
-                // Arm toggle
-                Section {
                     Toggle("Arm Vibration", isOn: $calc.isArmed)
                         .tint(.red)
+                } header: {
+                    Text("Trick Control")
                 } footer: {
-                    Text("When armed, pressing = schedules a vibration after the delay below. Disarms automatically after firing.")
+                    Text("When armed, pressing = schedules the vibration then disarms automatically.")
                 }
 
-                // Delay config
+                // Delay
                 Section {
                     HStack {
                         Text("Delay")
                         Spacer()
-                        TextField("seconds", text: $delayInput)
+                        TextField("10", text: $delayInput)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
@@ -42,19 +71,34 @@ struct ConfigView: View {
                             .foregroundColor(.secondary)
                     }
                 } header: {
-                    Text("Vibration Timing")
-                } footer: {
-                    Text("How many seconds after = is pressed before the phone vibrates. Default is 10.")
+                    Text("Timing")
                 }
 
-                // Reset
+                // Test button — fire immediately to verify it works
                 Section {
-                    Button("Disarm & Reset") {
+                    Button("Test Vibration Now (3 sec)") {
+                        calc.isArmed = true
+                        // Temporarily set short delay for test
+                        let saved = calc.vibrationDelay
+                        calc.vibrationDelay = 3
+                        calc.tapped("1")
+                        calc.tapped("+")
+                        calc.tapped("1")
+                        calc.tapped("=")
+                        calc.vibrationDelay = saved
+                    }
+                    .foregroundColor(.blue)
+
+                    Button("Cancel Pending Vibration") {
+                        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
                         calc.isArmed = false
+                        calc.lastScheduleError = ""
                     }
                     .foregroundColor(.orange)
+                } header: {
+                    Text("Debug")
                 } footer: {
-                    Text("Cancels any pending vibration.")
+                    Text("Use Test to verify vibration works on your device before performing.")
                 }
             }
             .navigationTitle("Config")
@@ -72,6 +116,7 @@ struct ConfigView: View {
             }
             .onAppear {
                 delayInput = String(calc.vibrationDelay)
+                calc.requestNotificationPermission()
             }
         }
     }
